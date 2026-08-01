@@ -1,6 +1,6 @@
+# Python
 venv/
 .env
-.claude/settings.local.json
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -8,8 +8,23 @@ __pycache__/
 .mypy_cache/
 .coverage
 htmlcov/
-faiss_index/
 *.egg-info/
 dist/
 build/
+
+# IDE / editors
+.idea/
+.vscode/
+*.iml
+
+# Runtime / logs
+*.log
+description.txt
+faiss_index/
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/settings.local.json
