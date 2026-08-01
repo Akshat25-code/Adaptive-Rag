@@ -2,109 +2,111 @@
 Retriever setup and vector store configuration.
 """
 
+import logging
 import os
 
+from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 from langchain_core.tools import create_retriever_tool
 from langchain_openai import OpenAIEmbeddings
-# from langchain_qdrant import QdrantVectorStore
-from langchain_community.vectorstores import FAISS
 
-from src.core.config import settings
+logger = logging.getLogger(__name__)
 
 embeddings = OpenAIEmbeddings()
 
-# Global variable to store the FAISS vectorstore instance
-# This ensures get_retriever() can access documents stored by retriever_chain()
+FAISS_INDEX_DIR = os.getenv("FAISS_INDEX_DIR", "faiss_index")
+
+# Global state
 _faiss_vectorstore = None
+_document_count = 0
+
+
+def _save_to_disk():
+    """Persist FAISS index to disk."""
+    global _faiss_vectorstore
+    if _faiss_vectorstore is not None:
+        _faiss_vectorstore.save_local(FAISS_INDEX_DIR)
+        logger.info("FAISS index saved to %s", FAISS_INDEX_DIR)
+
+
+def _count_docs():
+    """Count documents in FAISS store safely across versions."""
+    global _faiss_vectorstore
+    try:
+        return len(_faiss_vectorstore.docstore._dict)
+    except AttributeError:
+        try:
+            return _faiss_vectorstore.index.ntotal
+        except Exception:
+            return 0
+
+
+def _load_from_disk():
+    """Load FAISS index from disk if exists."""
+    global _faiss_vectorstore, _document_count
+    if os.path.exists(os.path.join(FAISS_INDEX_DIR, "index.faiss")):
+        try:
+            _faiss_vectorstore = FAISS.load_local(
+                FAISS_INDEX_DIR,
+                embeddings,
+                allow_dangerous_deserialization=True,
+            )
+            _document_count = _count_docs()
+            logger.info("Loaded FAISS index from disk (%d chunks)", _document_count)
+            return True
+        except Exception as e:
+            logger.error("Failed to load FAISS index: %s", e)
+    return False
+
+
+# Load on startup
+_load_from_disk()
 
 
 def retriever_chain(chunks: list[Document]):
     """
-    Initialize and store documents in FAISS vector database.
-
-    Args:
-        chunks: List of document chunks to store.
-
-    Returns:
-        Boolean indicating success of the operation.
+    Add document chunks to FAISS vector store.
+    Accumulates across uploads. Persists to disk.
     """
-    global _faiss_vectorstore
+    global _faiss_vectorstore, _document_count
 
     try:
-        # Commenting out Qdrant code for temporary FAISS usage
-        # vectorstore = QdrantVectorStore.from_documents(
-        #     documents=chunks,
-        #     embedding=embeddings,
-        #     url=settings.QDRANT_URL,
-        #     api_key=settings.QDRANT_API_KEY,
-        #     collection_name=settings.CODE_COLLECTION,
-        # )
-        vectorstore = FAISS.from_documents(
-            documents=chunks,
-            embedding=embeddings
-        )
+        new_store = FAISS.from_documents(documents=chunks, embedding=embeddings)
 
-        # Store the vectorstore globally so get_retriever() can access it
-        _faiss_vectorstore = vectorstore
+        if _faiss_vectorstore is not None:
+            _faiss_vectorstore.merge_from(new_store)
+            logger.info("Merged %d chunks into existing store", len(chunks))
+        else:
+            _faiss_vectorstore = new_store
+            logger.info("Created new FAISS store with %d chunks", len(chunks))
 
-        print("FAISS vector store initialized with documents")
-        print(f"Vectorstore contains {len(chunks)} document chunks")
+        _document_count += len(chunks)
+        _save_to_disk()
         return True
     except Exception as e:
-        print(f"Error storing documents in FAISS: {e}")
+        logger.error("Error storing documents in FAISS: %s", e)
         return False
 
 
 def get_retriever():
-    """
-    Get a retriever tool connected to the FAISS vector store.
-
-    Returns the retriever tool that can search documents stored by retriever_chain().
-    If no documents have been uploaded yet, creates a retriever with a dummy document.
-
-    Returns:
-        A LangChain retriever tool configured for the vector store.
-
-    Raises:
-        Exception: If vector store initialization fails.
-    """
+    """Get retriever tool connected to FAISS vector store."""
     global _faiss_vectorstore
 
     try:
-        # Commenting out Qdrant code for temporary FAISS usage
-        # vectorstore = QdrantVectorStore.from_documents(
-        #     documents=[],
-        #     embedding=embeddings,
-        #     url=settings.QDRANT_URL,
-        #     api_key=settings.QDRANT_API_KEY,
-        #     collection_name=settings.CODE_COLLECTION,
-        # )
-        # retriever = vectorstore.as_retriever()
-
-        # Use the global vectorstore if it exists (documents have been uploaded)
         if _faiss_vectorstore is not None:
             retriever = _faiss_vectorstore.as_retriever()
-            print("Using existing FAISS vectorstore with uploaded documents")
+            logger.info("Using FAISS vectorstore (%d total chunks)", _document_count)
         else:
-            # No documents uploaded yet, create dummy for initialization
-            print("No documents uploaded yet, creating dummy vectorstore")
-            from langchain_core.documents import Document as LangChainDocument
-
-            dummy_doc = LangChainDocument(
+            logger.info("No documents uploaded, creating dummy vectorstore")
+            dummy_doc = Document(
                 page_content="No documents have been uploaded yet. Please upload a document first.",
-                metadata={"source": "initialization"}
+                metadata={"source": "initialization"},
             )
-
-            _faiss_vectorstore = FAISS.from_documents(
-                documents=[dummy_doc],
-                embedding=embeddings
-            )
+            _faiss_vectorstore = FAISS.from_documents(documents=[dummy_doc], embedding=embeddings)
             retriever = _faiss_vectorstore.as_retriever()
 
-        # Load document description
         if os.path.exists("description.txt"):
-            with open("description.txt", "r", encoding="utf-8") as f:
+            with open("description.txt", encoding="utf-8") as f:
                 description = f.read()
         else:
             description = None
@@ -113,11 +115,29 @@ def get_retriever():
             retriever,
             "retriever_customer_uploaded_documents",
             f"Use this tool **only** to answer questions about: {description}\n"
-            "Don't use this tool to answer anything else."
+            "Don't use this tool to answer anything else.",
         )
 
         return retriever_tool
 
     except Exception as e:
-        print(f"Error initializing retriever: {e}")
-        raise Exception(e)
+        logger.error("Error initializing retriever: %s", e)
+        raise
+
+
+def get_document_count() -> int:
+    """Return total number of document chunks stored."""
+    return _document_count
+
+
+def clear_documents():
+    """Clear all documents from vector store and disk."""
+    global _faiss_vectorstore, _document_count
+    _faiss_vectorstore = None
+    _document_count = 0
+    # Remove index files
+    if os.path.exists(FAISS_INDEX_DIR):
+        import shutil
+
+        shutil.rmtree(FAISS_INDEX_DIR)
+    logger.info("Cleared all documents from FAISS store and disk")

@@ -2,8 +2,8 @@
 In-memory chat history storage.
 """
 
-from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_community.chat_message_histories import ChatMessageHistory
+from langchain_core.chat_history import BaseChatMessageHistory
 
 
 class ChatInMemoryHistory:
@@ -12,11 +12,7 @@ class ChatInMemoryHistory:
     store = {}
 
     @classmethod
-    def get_session_history(
-        cls,
-        session_id: str,
-        config: dict = None
-    ) -> BaseChatMessageHistory:
+    def get_session_history(cls, session_id: str, config: dict = None) -> BaseChatMessageHistory:
         """
         Get or create chat history for a session.
 

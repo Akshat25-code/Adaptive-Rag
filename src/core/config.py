@@ -18,6 +18,8 @@ class Settings:
     QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
     CODE_COLLECTION = os.getenv("QDRANT_CODE_COLLECTION", "codebase")
     DOCS_COLLECTION = os.getenv("QDRANT_DOCS_COLLECTION", "guidelines")
+    MONGO_URL: str = os.getenv("MONGO_URL", "mongodb://localhost:27017")
+    MONGO_DB_NAME: str = os.getenv("MONGO_DB_NAME", "adaptive_rag")
 
 
 settings = Settings()

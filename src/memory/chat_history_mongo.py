@@ -2,8 +2,7 @@
 Chat history storage using MongoDB backend.
 """
 
-from datetime import datetime
-from typing import List
+from datetime import UTC, datetime
 
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.messages import BaseMessage
@@ -32,15 +31,17 @@ class MongoDBChatMessageHistory(BaseChatMessageHistory):
         Args:
             message: The message to save.
         """
-        await collection.insert_one({
-            "session_id": self.session_id,
-            "type": message.type,
-            "content": message.content,
-            "additional_kwargs": message.additional_kwargs,
-            "timestamp": datetime.utcnow(),
-        })
+        await collection.insert_one(
+            {
+                "session_id": self.session_id,
+                "type": message.type,
+                "content": message.content,
+                "additional_kwargs": message.additional_kwargs,
+                "timestamp": datetime.now(UTC),
+            }
+        )
 
-    async def get_messages(self) -> List[BaseMessage]:
+    async def get_messages(self) -> list[BaseMessage]:
         """
         Load all messages for a session from MongoDB.
 
@@ -53,16 +54,18 @@ class MongoDBChatMessageHistory(BaseChatMessageHistory):
         docs = await cursor.to_list(length=1000)
 
         # Convert to BaseMessage objects
-        return messages_from_dict([
-            {
-                "type": d["type"],
-                "data": {
-                    "content": d["content"],
-                    "additional_kwargs": d.get("additional_kwargs", {}),
+        return messages_from_dict(
+            [
+                {
+                    "type": d["type"],
+                    "data": {
+                        "content": d["content"],
+                        "additional_kwargs": d.get("additional_kwargs", {}),
+                    },
                 }
-            }
-            for d in docs
-        ])
+                for d in docs
+            ]
+        )
 
     async def clear(self) -> None:
         """Delete all messages for a session."""
@@ -73,11 +76,7 @@ class ChatHistory:
     """Factory for MongoDB-backed chat history."""
 
     @classmethod
-    def get_session_history(
-        cls,
-        session_id: str,
-        config: dict = None
-    ) -> MongoDBChatMessageHistory:
+    def get_session_history(cls, session_id: str, config: dict = None) -> MongoDBChatMessageHistory:
         """
         Get or create chat history for a session.
 
