@@ -9,10 +9,10 @@ from langchain_core.chat_history import BaseChatMessageHistory
 class ChatInMemoryHistory:
     """In-memory chat history storage."""
 
-    store = {}
+    store: dict[str, ChatMessageHistory] = {}
 
     @classmethod
-    def get_session_history(cls, session_id: str, config: dict = None) -> BaseChatMessageHistory:
+    def get_session_history(cls, session_id: str, config: dict | None = None) -> BaseChatMessageHistory:
         """
         Get or create chat history for a session.
 

@@ -76,7 +76,7 @@ class ChatHistory:
     """Factory for MongoDB-backed chat history."""
 
     @classmethod
-    def get_session_history(cls, session_id: str, config: dict = None) -> MongoDBChatMessageHistory:
+    def get_session_history(cls, session_id: str, config: dict | None = None) -> MongoDBChatMessageHistory:
         """
         Get or create chat history for a session.
 

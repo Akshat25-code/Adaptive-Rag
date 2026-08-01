@@ -10,7 +10,7 @@ import yaml
 class Config:
     """Load and manage configuration from YAML file."""
 
-    def __init__(self, config_file: str = None):
+    def __init__(self, config_file: str | None = None):
         """
         Initialize configuration from YAML file.
 
